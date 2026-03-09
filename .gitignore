@@ -29,6 +29,7 @@ airflow/logs/
 .vagrant/
 k8s/vagrant/join-command.sh
 k8s/vagrant/kubeconfig
+k8s/spark/jars
 
 # === PostgreSQL / MinIO data ===
 postgres/

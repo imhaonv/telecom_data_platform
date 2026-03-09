@@ -1,6 +1,3 @@
-# docker-compose.yml
-version: '3.8'
-
 services:
   # Minio (S3 compatible storage)
   minio:
@@ -118,7 +115,11 @@ services:
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/scripts:/opt/airflow/scripts
-    command: scheduler
+    command: >
+      bash -c "
+        airflow db init &&
+        airflow scheduler
+      "
     depends_on:
       - airflow-webserver
 
