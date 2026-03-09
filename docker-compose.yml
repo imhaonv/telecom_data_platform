@@ -1,0 +1,195 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Minio (S3 compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # PostgreSQL (for Silver and Gold layers)
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Apache Spark with Iceberg
+  spark-master:
+    build: ./spark
+    container_name: spark-master
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "${SPARK_MASTER_WEBUI_PORT}:8080"
+      - "${SPARK_MASTER_PORT}:7077"
+    environment:
+      - SPARK_MASTER_HOST=0.0.0.0
+    volumes:
+      - ./spark/scripts:/opt/spark/scripts
+
+  spark-worker:
+    build: ./spark
+    container_name: spark-worker
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:${SPARK_MASTER_PORT}
+    environment:
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark/scripts:/opt/spark/scripts
+
+  # Apache Airflow
+  airflow-webserver:
+    build: ./airflow
+    container_name: airflow-webserver
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW__CORE__FERNET_KEY}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW_ADMIN_USER=${AIRFLOW_ADMIN_USER}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - SPARK_MASTER_PORT=${SPARK_MASTER_PORT}
+      - AIRFLOW_CONN_SPARK_DEFAULT=spark://spark-master:${SPARK_MASTER_PORT}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+    ports:
+      - "${AIRFLOW_HOST_PORT}:8080"
+    command: >
+      bash -c "
+        airflow db init &&
+        airflow users create --username $${AIRFLOW_ADMIN_USER} --password $${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+        airflow webserver
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    build: ./airflow
+    container_name: airflow-scheduler
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW__CORE__FERNET_KEY}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - SPARK_MASTER_PORT=${SPARK_MASTER_PORT}
+      - AIRFLOW_CONN_SPARK_DEFAULT=spark://spark-master:${SPARK_MASTER_PORT}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/scripts:/opt/airflow/scripts
+    command: scheduler
+    depends_on:
+      - airflow-webserver
+
+  # Data Generator Service
+  data-generator:
+    build: ./data-generator
+    container_name: data-generator
+    environment:
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - GENERATION_INTERVAL=${GENERATION_INTERVAL}
+      - RECORDS_PER_BATCH=${RECORDS_PER_BATCH}
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./data-generator:/app
+
+  # DBT Service
+  dbt-service:
+    build: ./dbt
+    container_name: dbt-service
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+    volumes:
+      - ./dbt:/usr/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Apache Superset
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    environment:
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY}
+      - DATABASE_DIALECT=postgresql
+      - DATABASE_HOST=${POSTGRES_HOST}
+      - DATABASE_USER=${POSTGRES_USER}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD}
+      - DATABASE_DB=${POSTGRES_DB}
+      - DATABASE_PORT=${POSTGRES_PORT}
+    ports:
+      - "${SUPERSET_HOST_PORT}:8088"
+    volumes:
+      - ./superset:/app/superset_home
+    depends_on:
+      - postgres
+    command: >
+      sh -c "
+        superset db upgrade &&
+        superset init &&
+        superset run -p 8088 --with-threads --reload --debugger
+      "
+
+  # Trino (optional - for querying Iceberg)
+  trino:
+    image: trinodb/trino:latest
+    container_name: trino
+    ports:
+      - "${TRINO_HOST_PORT}:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+    depends_on:
+      - minio
+
+volumes:
+  minio_data:
+  postgres_data:

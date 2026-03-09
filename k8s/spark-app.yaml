@@ -1,0 +1,45 @@
+# k8s/spark-app.yaml - SparkApplication cho Bronze → Silver transformation
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: telecom-bronze-to-silver
+  namespace: telecom-platform
+spec:
+  type: Python
+  mode: cluster
+  image: "telecom-spark:latest"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: "local:///opt/spark/work-dir/spark_transform.py"
+  sparkVersion: "3.5.1"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+  sparkConf:
+    # Iceberg configuration
+    "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog"
+    "spark.sql.catalog.spark_catalog.type": "hive"
+    "spark.sql.catalog.local": "org.apache.iceberg.spark.SparkCatalog"
+    "spark.sql.catalog.local.type": "hadoop"
+    "spark.sql.catalog.local.warehouse": "s3a://silver/"
+    # MinIO / S3A configuration
+    "spark.hadoop.fs.s3a.endpoint": "http://minio.telecom-platform.svc.cluster.local:9000"
+    "spark.hadoop.fs.s3a.access.key": "admin"
+    "spark.hadoop.fs.s3a.secret.key": "admin123"
+    "spark.hadoop.fs.s3a.path.style.access": "true"
+    "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+  driver:
+    cores: 1
+    memory: "1g"
+    labels:
+      app: telecom-spark
+      version: "3.5.1"
+    serviceAccount: spark
+  executor:
+    instances: 2
+    cores: 1
+    memory: "1g"
+    labels:
+      app: telecom-spark
+      version: "3.5.1"

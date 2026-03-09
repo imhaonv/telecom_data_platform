@@ -1,0 +1,31 @@
+# k8s/data-generator.yaml - Data Generator deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-generator
+  namespace: telecom-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-generator
+  template:
+    metadata:
+      labels:
+        app: data-generator
+    spec:
+      containers:
+        - name: data-generator
+          image: telecom-data-generator:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MINIO_ENDPOINT
+              value: "minio.telecom-platform.svc.cluster.local:9000"
+            - name: MINIO_ACCESS_KEY
+              value: "admin"
+            - name: MINIO_SECRET_KEY
+              value: "admin123"
+            - name: GENERATION_INTERVAL
+              value: "30"
+            - name: RECORDS_PER_BATCH
+              value: "100000"

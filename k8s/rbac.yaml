@@ -1,0 +1,39 @@
+# k8s/rbac.yaml - ServiceAccount và RBAC cho Spark
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark
+  namespace: telecom-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-role
+  namespace: telecom-platform
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-rolebinding
+  namespace: telecom-platform
+subjects:
+  - kind: ServiceAccount
+    name: spark
+    namespace: telecom-platform
+roleRef:
+  kind: Role
+  name: spark-role
+  apiGroup: rbac.authorization.k8s.io

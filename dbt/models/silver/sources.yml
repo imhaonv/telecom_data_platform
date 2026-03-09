@@ -1,0 +1,40 @@
+# dbt/models/silver/sources.yml
+version: 2
+
+sources:
+  - name: bronze
+    description: "Bronze layer - raw data from Spark Iceberg transformation synced to PostgreSQL"
+    schema: public
+    tables:
+      - name: telecom_subscriptions
+        description: "Telecom subscription data (synced from Iceberg Silver layer)"
+        columns:
+          - name: subscription_id
+            description: "Unique subscription identifier"
+            tests:
+              - not_null
+              - unique
+          - name: customer_id
+            description: "Customer identifier"
+            tests:
+              - not_null
+          - name: package_name
+            description: "Name of the data package"
+            tests:
+              - not_null
+          - name: package_type
+            description: "Type of package: data_only, combo, unlimited, daily, weekly"
+          - name: activation_date
+            description: "Subscription activation date"
+            tests:
+              - not_null
+          - name: status
+            description: "Current subscription status"
+            tests:
+              - accepted_values:
+                  values: ['active', 'expired', 'suspended', 'cancelled', 'pending']
+          - name: zone
+            description: "Geographic zone: north, central, south"
+            tests:
+              - accepted_values:
+                  values: ['north', 'central', 'south']
