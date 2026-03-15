@@ -3,13 +3,20 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime
+import os
 import sys
 
 
 def create_spark_session():
     """Tạo Spark session với Iceberg configuration"""
+    spark_master = os.getenv("SPARK_MASTER", "spark://spark-master:7077")
     return (
         SparkSession.builder.appName("BronzeToSilver")
+        .master(spark_master)
+        .config("spark.ui.port", "4040")
+        .config("spark.driver.memory", "1g")
+        .config("spark.executor.memory", "1g")
+        .config("spark.executor.cores", "1")
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",

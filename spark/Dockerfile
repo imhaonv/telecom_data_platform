@@ -22,12 +22,11 @@ RUN wget -q https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_
 COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install -r /tmp/requirements.txt
 
-# Cài đặt Iceberg và các JARs
-# (Optional) Iceberg và AWS JARs sẽ được thêm sau nếu cần
-# RUN mkdir -p /opt/spark/jars
-# COPY jars/iceberg-spark-runtime-3.5_2.12-1.5.0.jar /opt/spark/jars/
-# COPY jars/aws-java-sdk-bundle-1.12.262.jar /opt/spark/jars/
-# COPY jars/hadoop-aws-3.3.4.jar /opt/spark/jars/
+# Download PostgreSQL JDBC driver và Hadoop AWS JARs
+RUN mkdir -p /opt/spark/jars && \
+    wget -q -P /opt/spark/jars https://jdbc.postgresql.org/download/postgresql-42.7.1.jar && \
+    wget -q -P /opt/spark/jars https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+    wget -q -P /opt/spark/jars https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar
 
 # Set environment variables
 ENV SPARK_HOME=/opt/spark

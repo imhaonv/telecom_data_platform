@@ -47,20 +47,24 @@ services:
       - "${SPARK_MASTER_PORT}:7077"
     environment:
       - SPARK_MASTER_HOST=0.0.0.0
+      - SPARK_PUBLIC_DNS=localhost
     volumes:
       - ./spark/scripts:/opt/spark/scripts
+      - ./airflow/scripts:/opt/spark/airflow-scripts
 
   spark-worker:
     build: ./spark
-    container_name: spark-worker
     command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:${SPARK_MASTER_PORT}
     environment:
       - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
       - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+      - SPARK_PUBLIC_DNS=localhost
     depends_on:
       - spark-master
     volumes:
       - ./spark/scripts:/opt/spark/scripts
+    deploy:
+      replicas: 2
 
   # Apache Airflow
   airflow-webserver:
@@ -77,12 +81,13 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT}
       - SPARK_MASTER_PORT=${SPARK_MASTER_PORT}
-      - AIRFLOW_CONN_SPARK_DEFAULT=spark://spark-master:${SPARK_MASTER_PORT}
+      - AIRFLOW_CONN_SPARK_DEFAULT={"conn_type":"spark","host":"spark://spark-master","port":${SPARK_MASTER_PORT}}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/airflow/dbt
     ports:
       - "${AIRFLOW_HOST_PORT}:8080"
     command: >
@@ -108,13 +113,25 @@ services:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW__CORE__FERNET_KEY}
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - SPARK_MASTER=${SPARK_MASTER}
       - SPARK_MASTER_PORT=${SPARK_MASTER_PORT}
-      - AIRFLOW_CONN_SPARK_DEFAULT=spark://spark-master:${SPARK_MASTER_PORT}
+      - AIRFLOW_CONN_SPARK_DEFAULT={"conn_type":"spark","host":"spark://spark-master","port":${SPARK_MASTER_PORT}}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+    ports:
+      - "4040:4040"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/scripts:/opt/airflow/scripts
+      - ./dbt:/opt/airflow/dbt
     command: >
       bash -c "
         airflow db init &&
